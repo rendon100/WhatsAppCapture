@@ -27,7 +27,9 @@ class MediaMonitorService : Service() {
         getSharedPreferences("config", MODE_PRIVATE)
             .edit().putBoolean("running", true).apply()
 
-        startWatching()
+        if (watchers.isEmpty()) {
+            startWatching()
+        }
 
         return START_STICKY
     }

@@ -31,4 +31,16 @@ object Config {
         return context.getSharedPreferences("config", Context.MODE_PRIVATE)
             .getBoolean("running", false)
     }
+
+    fun setServiceEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences("config", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("service_enabled", enabled)
+            .apply()
+    }
+
+    fun isServiceEnabled(context: Context): Boolean {
+        return context.getSharedPreferences("config", Context.MODE_PRIVATE)
+            .getBoolean("service_enabled", false)
+    }
 }

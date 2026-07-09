@@ -1,6 +1,7 @@
 package com.whatscapture
 
 import android.Manifest
+import android.app.ActivityManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -50,16 +51,27 @@ class MainActivity : AppCompatActivity() {
                 startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 return@setOnClickListener
             }
-            startService(Intent(this, MediaMonitorService::class.java))
+
+            if (isMediaMonitorServiceRunning()) {
+                updateStartButton(true)
+                Toast.makeText(this, "El servicio ya esta en ejecucion", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            Config.setServiceEnabled(this, true)
+            val serviceIntent = Intent(this, MediaMonitorService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+
             Toast.makeText(this, "Servicio iniciado en segundo plano", Toast.LENGTH_SHORT).show()
-            btnStart.isEnabled = false
-            btnStart.text = "EN EJECUCIÓN"
+            updateStartButton(true)
         }
 
-        if (Config.isRunning(this)) {
-            btnStart.isEnabled = false
-            btnStart.text = "EN EJECUCIÓN"
-        }
+        syncRunningState()
+        autoStartIfEnabled()
 
         checkInitialPermissions()
     }
@@ -75,6 +87,41 @@ class MainActivity : AppCompatActivity() {
 
     private val requestStorageLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    private fun syncRunningState() {
+        val running = isMediaMonitorServiceRunning()
+        getSharedPreferences("config", MODE_PRIVATE)
+            .edit()
+            .putBoolean("running", running)
+            .apply()
+        updateStartButton(running)
+    }
+
+    private fun updateStartButton(running: Boolean) {
+        btnStart.isEnabled = !running
+        btnStart.text = if (running) "EN EJECUCION" else "INICIAR MONITOREO"
+    }
+
+    private fun isMediaMonitorServiceRunning(): Boolean {
+        val activityManager = getSystemService(ActivityManager::class.java)
+        @Suppress("DEPRECATION")
+        return activityManager.getRunningServices(Int.MAX_VALUE)
+            .any { it.service.className == MediaMonitorService::class.java.name }
+    }
+
+    private fun autoStartIfEnabled() {
+        if (!Config.isServiceEnabled(this)) return
+        if (!isNotificationServiceEnabled()) return
+        if (isMediaMonitorServiceRunning()) return
+
+        val serviceIntent = Intent(this, MediaMonitorService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+        updateStartButton(true)
+    }
 
     private fun isNotificationServiceEnabled(): Boolean {
         val enabledListeners = Settings.Secure.getString(
