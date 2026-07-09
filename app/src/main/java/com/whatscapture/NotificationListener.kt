@@ -1,6 +1,9 @@
 package com.whatscapture
 
 import android.app.Notification
+import android.content.ComponentName
+import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
@@ -11,6 +14,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class NotificationListener : NotificationListenerService() {
+
+    override fun onListenerConnected() {
+        Log.i(TAG, "Notification listener conectado")
+    }
+
+    override fun onListenerDisconnected() {
+        Log.w(TAG, "Notification listener desconectado, solicitando rebind")
+        try {
+            forceRebind(this)
+        } catch (e: Exception) {
+            Log.e(TAG, "No se pudo solicitar rebind", e)
+        }
+    }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (sbn.packageName != WHATSAPP_PACKAGE && sbn.packageName != WHATSAPP_BUSINESS_PACKAGE) return
@@ -90,5 +106,26 @@ class NotificationListener : NotificationListenerService() {
         private const val EXTRA_TEXT = "android.text"
         private const val EXTRA_SUMMARY_TEXT = "android.summaryText"
         private const val EXTRA_BIG_TEXT = "android.bigText"
+
+        fun forceRebind(context: Context) {
+            val component = ComponentName(context, NotificationListener::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                requestRebind(component)
+                return
+            }
+
+            // Fallback for old versions: toggling the component forces a fresh bind.
+            val pm = context.packageManager
+            pm.setComponentEnabledSetting(
+                component,
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP
+            )
+            pm.setComponentEnabledSetting(
+                component,
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                PackageManager.DONT_KILL_APP
+            )
+        }
     }
 }

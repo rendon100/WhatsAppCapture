@@ -52,6 +52,11 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
+            try {
+                NotificationListener.forceRebind(this)
+            } catch (_: Exception) {
+            }
+
             if (isMediaMonitorServiceRunning()) {
                 updateStartButton(true)
                 Toast.makeText(this, "El servicio ya esta en ejecucion", Toast.LENGTH_SHORT).show()
@@ -72,6 +77,7 @@ class MainActivity : AppCompatActivity() {
 
         syncRunningState()
         autoStartIfEnabled()
+        tryRebindNotificationListener()
 
         checkInitialPermissions()
     }
@@ -112,6 +118,7 @@ class MainActivity : AppCompatActivity() {
     private fun autoStartIfEnabled() {
         if (!Config.isServiceEnabled(this)) return
         if (!isNotificationServiceEnabled()) return
+        tryRebindNotificationListener()
         if (isMediaMonitorServiceRunning()) return
 
         val serviceIntent = Intent(this, MediaMonitorService::class.java)
@@ -121,6 +128,14 @@ class MainActivity : AppCompatActivity() {
             startService(serviceIntent)
         }
         updateStartButton(true)
+    }
+
+    private fun tryRebindNotificationListener() {
+        if (!isNotificationServiceEnabled()) return
+        try {
+            NotificationListener.forceRebind(this)
+        } catch (_: Exception) {
+        }
     }
 
     private fun isNotificationServiceEnabled(): Boolean {
