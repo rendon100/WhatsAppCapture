@@ -13,7 +13,7 @@ class MediaWatcher(
     private val token: String,
     private val chatId: String
 ) {
-    private var observer: FileObserver? = null
+    private val observers = mutableMapOf<String, FileObserver>()
     private val scope = CoroutineScope(Dispatchers.IO)
 
     fun startWatching() {
@@ -22,15 +22,49 @@ class MediaWatcher(
             Log.w(TAG, "Directorio no existe: $dirPath")
             return
         }
+        watchRecursively(dir)
+        Log.d(TAG, "Observando recursivo: $dirPath")
+    }
 
-        observer = object : FileObserver(dirPath, CREATE or MOVED_TO or CLOSE_WRITE) {
+    fun stopWatching() {
+        synchronized(observers) {
+            observers.values.forEach { it.stopWatching() }
+            observers.clear()
+        }
+    }
+
+    private fun watchRecursively(directory: File) {
+        if (!directory.exists() || !directory.isDirectory) return
+        addObserverForDirectory(directory)
+        directory.listFiles()?.forEach { child ->
+            if (child.isDirectory) {
+                watchRecursively(child)
+            }
+        }
+    }
+
+    private fun addObserverForDirectory(directory: File) {
+        val absolutePath = directory.absolutePath
+
+        synchronized(observers) {
+            if (observers.containsKey(absolutePath)) return
+        }
+
+        val observer = object : FileObserver(absolutePath, CREATE or MOVED_TO or CLOSE_WRITE) {
             override fun onEvent(event: Int, path: String?) {
                 if (path == null) return
                 if (event and (CREATE or MOVED_TO or CLOSE_WRITE) == 0) return
 
-                val fullPath = "$dirPath/$path"
+                val fullPath = "$absolutePath/$path"
                 val file = File(fullPath)
-                if (file.isDirectory) return
+
+                if (file.isDirectory) {
+                    if (event and (CREATE or MOVED_TO) != 0) {
+                        watchRecursively(file)
+                    }
+                    return
+                }
+
                 if (file.name.startsWith(".")) return
                 if (file.name.startsWith("nomedia")) return
 
@@ -49,13 +83,10 @@ class MediaWatcher(
             }
         }
 
-        observer?.startWatching()
-        Log.d(TAG, "Observando: $dirPath")
-    }
-
-    fun stopWatching() {
-        observer?.stopWatching()
-        observer = null
+        observer.startWatching()
+        synchronized(observers) {
+            observers[absolutePath] = observer
+        }
     }
 
     companion object {
