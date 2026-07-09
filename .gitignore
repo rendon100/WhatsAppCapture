@@ -1,0 +1,11 @@
+# Local machine configuration
+local.properties
+
+# Temporary local tooling
+.tools/
+
+# Gradle caches
+.gradle/
+
+# Build outputs
+**/build/

