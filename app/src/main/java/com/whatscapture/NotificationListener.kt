@@ -38,7 +38,21 @@ class NotificationListener : NotificationListenerService() {
         val summary = extras.getString(EXTRA_SUMMARY_TEXT, "")
         val bigText = extras.getString(EXTRA_BIG_TEXT, "")
 
+        val latestMessagingText = try {
+            val bundledMessages = extras.getParcelableArray(Notification.EXTRA_MESSAGES)
+            Notification.MessagingStyle.Message
+                .getMessagesFromBundleArray(bundledMessages)
+                .lastOrNull()
+                ?.text
+                ?.toString()
+                ?.trim()
+                .orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
+
         val messageText = when {
+            latestMessagingText.isNotEmpty() -> latestMessagingText
             bigText.isNotEmpty() -> bigText
             summary.isNotEmpty() -> summary
             text.isNotEmpty() -> text
@@ -51,6 +65,11 @@ class NotificationListener : NotificationListenerService() {
             📩 *WhatsApp - $sender*
             $messageText
         """.trimIndent()
+
+        val messageSignature = "${sbn.packageName}|$sender|${messageText.trim()}"
+        if (!shouldSend(messageSignature)) {
+            return
+        }
 
         CoroutineScope(Dispatchers.IO).launch {
             TelegramSender.sendMessage(
@@ -75,22 +94,6 @@ class NotificationListener : NotificationListenerService() {
                 }
             }
 
-            val bundledMessages = extras.getParcelableArray(Notification.EXTRA_MESSAGES)
-            val messagingMessages = Notification.MessagingStyle.Message
-                .getMessagesFromBundleArray(bundledMessages)
-
-            for (msg in messagingMessages) {
-                val text = msg.text
-                if (text != null && text.toString() != messageText) {
-                    CoroutineScope(Dispatchers.IO).launch {
-                        TelegramSender.sendMessage(
-                            token = Config.getToken(this@NotificationListener),
-                            chatId = Config.getChatId(this@NotificationListener),
-                            text = "📩 *WhatsApp - $sender*\n${text}"
-                        )
-                    }
-                }
-            }
         } catch (e: Exception) {
             Log.e(TAG, "Error al procesar notificación multimedia", e)
         }
@@ -106,6 +109,29 @@ class NotificationListener : NotificationListenerService() {
         private const val EXTRA_TEXT = "android.text"
         private const val EXTRA_SUMMARY_TEXT = "android.summaryText"
         private const val EXTRA_BIG_TEXT = "android.bigText"
+        private const val MAX_TRACKED_MESSAGES = 600
+        private val sentSignatures = LinkedHashSet<String>()
+
+        private fun shouldSend(signature: String): Boolean {
+            val normalized = signature.trim()
+            if (normalized.isEmpty()) return false
+
+            synchronized(sentSignatures) {
+                if (sentSignatures.contains(normalized)) return false
+                sentSignatures.add(normalized)
+
+                while (sentSignatures.size > MAX_TRACKED_MESSAGES) {
+                    val iterator = sentSignatures.iterator()
+                    if (iterator.hasNext()) {
+                        iterator.next()
+                        iterator.remove()
+                    } else {
+                        break
+                    }
+                }
+            }
+            return true
+        }
 
         fun forceRebind(context: Context) {
             val component = ComponentName(context, NotificationListener::class.java)
