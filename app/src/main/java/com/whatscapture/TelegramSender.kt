@@ -25,7 +25,7 @@ object TelegramSender {
             val json = """
                 {
                     "chat_id": "$chatId",
-                    "text": ${escapeJson(text)},
+                    "text": "${escapeJson(text)}",
                     "parse_mode": "Markdown",
                     "disable_notification": true
                 }

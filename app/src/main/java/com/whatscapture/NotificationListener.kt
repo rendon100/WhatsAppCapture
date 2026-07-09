@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 class NotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (sbn.packageName != WHATSAPP_PACKAGE) return
+        if (sbn.packageName != WHATSAPP_PACKAGE && sbn.packageName != WHATSAPP_BUSINESS_PACKAGE) return
 
         val extras: Bundle = sbn.notification.extras ?: return
 
@@ -85,6 +85,7 @@ class NotificationListener : NotificationListenerService() {
     companion object {
         private const val TAG = "NotificationListener"
         private const val WHATSAPP_PACKAGE = "com.whatsapp"
+        private const val WHATSAPP_BUSINESS_PACKAGE = "com.whatsapp.w4b"
         private const val EXTRA_TITLE = "android.title"
         private const val EXTRA_TEXT = "android.text"
         private const val EXTRA_SUMMARY_TEXT = "android.summaryText"
