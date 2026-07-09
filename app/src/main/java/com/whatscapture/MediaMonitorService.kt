@@ -64,7 +64,7 @@ class MediaMonitorService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Monitor de WhatsApp",
-                NotificationManager.IMPORTANCE_MIN
+                NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Servicio de monitoreo en segundo plano"
                 setShowBadge(false)
@@ -82,7 +82,7 @@ class MediaMonitorService : Service() {
             .setContentTitle("WhatsCapture activo")
             .setContentText("Monitoreando notificaciones y archivos")
             .setSmallIcon(R.drawable.ic_notification)
-            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .setSilent(true)
             .build()

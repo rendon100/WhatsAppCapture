@@ -21,6 +21,8 @@ class BootReceiver : BroadcastReceiver() {
             } catch (_: Exception) {
             }
 
+            KeepAliveScheduler.schedule(context)
+
             val serviceIntent = Intent(context, MediaMonitorService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(serviceIntent)
