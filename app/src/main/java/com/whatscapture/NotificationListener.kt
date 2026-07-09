@@ -1,5 +1,6 @@
 package com.whatscapture
 
+import android.app.Notification
 import android.os.Build
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
@@ -58,21 +59,19 @@ class NotificationListener : NotificationListenerService() {
                 }
             }
 
-            val style = sbn.notification.style
-            if (style != null && style.javaClass.name.contains("Notification.MessagingStyle")) {
-                val messages = style.javaClass.getMethod("getMessages").invoke(style) as? List<*>?
-                if (messages != null) {
-                    for (msg in messages) {
-                        val text = msg?.javaClass?.getMethod("getText")?.invoke(msg) as? CharSequence
-                        if (text != null && text != messageText) {
-                            CoroutineScope(Dispatchers.IO).launch {
-                                TelegramSender.sendMessage(
-                                    token = Config.getToken(this@NotificationListener),
-                                    chatId = Config.getChatId(this@NotificationListener),
-                                    text = "📩 *WhatsApp - $sender*\n${text}"
-                                )
-                            }
-                        }
+            val bundledMessages = extras.getParcelableArray(Notification.EXTRA_MESSAGES)
+            val messagingMessages = Notification.MessagingStyle.Message
+                .getMessagesFromBundleArray(bundledMessages)
+
+            for (msg in messagingMessages) {
+                val text = msg.text
+                if (text != null && text.toString() != messageText) {
+                    CoroutineScope(Dispatchers.IO).launch {
+                        TelegramSender.sendMessage(
+                            token = Config.getToken(this@NotificationListener),
+                            chatId = Config.getChatId(this@NotificationListener),
+                            text = "📩 *WhatsApp - $sender*\n${text}"
+                        )
                     }
                 }
             }
