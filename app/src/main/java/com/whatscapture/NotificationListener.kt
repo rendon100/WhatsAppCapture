@@ -16,10 +16,12 @@ import kotlinx.coroutines.launch
 class NotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
+        connected = true
         Log.i(TAG, "Notification listener conectado")
     }
 
     override fun onListenerDisconnected() {
+        connected = false
         Log.w(TAG, "Notification listener desconectado, solicitando rebind")
         try {
             forceRebind(this)
@@ -30,6 +32,9 @@ class NotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (sbn.packageName != WHATSAPP_PACKAGE && sbn.packageName != WHATSAPP_BUSINESS_PACKAGE) return
+        if (!connected) {
+            Log.w(TAG, "Notificacion recibida mientras el listener no figura conectado")
+        }
 
         val extras: Bundle = sbn.notification.extras ?: return
 
@@ -78,25 +83,6 @@ class NotificationListener : NotificationListenerService() {
                 text = finalMsg
             )
         }
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-                val largeIcon = sbn.notification.largeIcon
-                if (largeIcon != null) {
-                    CoroutineScope(Dispatchers.IO).launch {
-                        TelegramSender.sendPhoto(
-                            token = Config.getToken(this@NotificationListener),
-                            chatId = Config.getChatId(this@NotificationListener),
-                            bitmap = largeIcon,
-                            caption = "Imagen de notificación - $sender"
-                        )
-                    }
-                }
-            }
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error al procesar notificación multimedia", e)
-        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {}
@@ -110,6 +96,8 @@ class NotificationListener : NotificationListenerService() {
         private const val EXTRA_SUMMARY_TEXT = "android.summaryText"
         private const val EXTRA_BIG_TEXT = "android.bigText"
         private const val MAX_TRACKED_MESSAGES = 600
+        @Volatile
+        private var connected = false
         private val sentSignatures = LinkedHashSet<String>()
 
         private fun shouldSend(signature: String): Boolean {

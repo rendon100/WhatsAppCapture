@@ -9,8 +9,7 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
         if (action == Intent.ACTION_BOOT_COMPLETED ||
-            action == Intent.ACTION_MY_PACKAGE_REPLACED ||
-            action == MediaMonitorService.ACTION_KEEP_ALIVE_RESTART
+            action == Intent.ACTION_MY_PACKAGE_REPLACED
         ) {
             Config.init(context)
             if (!Config.isServiceEnabled(context)) return
@@ -20,8 +19,6 @@ class BootReceiver : BroadcastReceiver() {
                 NotificationListener.forceRebind(context)
             } catch (_: Exception) {
             }
-
-            KeepAliveScheduler.schedule(context)
 
             val serviceIntent = Intent(context, MediaMonitorService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

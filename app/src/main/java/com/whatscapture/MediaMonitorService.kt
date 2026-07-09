@@ -3,13 +3,11 @@ package com.whatscapture
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.os.Build
 import android.os.Environment
 import android.os.IBinder
-import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.io.File
@@ -41,20 +39,9 @@ class MediaMonitorService : Service() {
         watchers.values.forEach { it.stopWatching() }
         watchers.clear()
 
-        if (Config.isServiceEnabled(this)) {
-            scheduleServiceRestart(RESTART_DELAY_MS)
-        }
-
         getSharedPreferences("config", MODE_PRIVATE)
             .edit().putBoolean("running", false).apply()
         super.onDestroy()
-    }
-
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        if (Config.isServiceEnabled(this)) {
-            scheduleServiceRestart(RESTART_DELAY_MS)
-        }
-        super.onTaskRemoved(rootIntent)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -160,29 +147,9 @@ class MediaMonitorService : Service() {
         }
     }
 
-    private fun scheduleServiceRestart(delayMs: Long) {
-        val restartIntent = Intent(this, BootReceiver::class.java).apply {
-            action = ACTION_KEEP_ALIVE_RESTART
-            setPackage(packageName)
-        }
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        val pendingIntent = PendingIntent.getBroadcast(this, 2001, restartIntent, flags)
-
-        val am = getSystemService(android.app.AlarmManager::class.java)
-        am.setExactAndAllowWhileIdle(
-            android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,
-            SystemClock.elapsedRealtime() + delayMs,
-            pendingIntent
-        )
-
-        Log.w(TAG, "Reinicio del servicio programado en ${delayMs}ms")
-    }
-
     companion object {
         private const val TAG = "MediaMonitorService"
         private const val CHANNEL_ID = "whatsapp_monitor_channel"
         private const val NOTIFICATION_ID = 1001
-        private const val RESTART_DELAY_MS = 5000L
-        const val ACTION_KEEP_ALIVE_RESTART = "com.whatscapture.action.KEEP_ALIVE_RESTART"
     }
 }

@@ -64,7 +64,6 @@ class MainActivity : AppCompatActivity() {
             }
 
             Config.setServiceEnabled(this, true)
-            KeepAliveScheduler.schedule(this)
             val serviceIntent = Intent(this, MediaMonitorService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent)
@@ -79,7 +78,6 @@ class MainActivity : AppCompatActivity() {
         syncRunningState()
         autoStartIfEnabled()
         tryRebindNotificationListener()
-        KeepAliveScheduler.schedule(this)
 
         checkInitialPermissions()
     }

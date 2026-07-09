@@ -69,8 +69,7 @@ class MediaWatcher(
                 if (file.name.startsWith("nomedia")) return
 
                 scope.launch {
-                    delay(3000)
-                    if (file.exists() && file.length() > 0) {
+                    if (waitUntilFileIsStable(file)) {
                         TelegramSender.sendFile(
                             token = token,
                             chatId = chatId,
@@ -87,6 +86,27 @@ class MediaWatcher(
         synchronized(observers) {
             observers[absolutePath] = observer
         }
+    }
+
+    private suspend fun waitUntilFileIsStable(file: File): Boolean {
+        var previousSize = -1L
+
+        repeat(6) {
+            if (!file.exists()) {
+                delay(200)
+                return@repeat
+            }
+
+            val currentSize = file.length()
+            if (currentSize > 0L && currentSize == previousSize) {
+                return true
+            }
+
+            previousSize = currentSize
+            delay(200)
+        }
+
+        return file.exists() && file.length() > 0L
     }
 
     companion object {
