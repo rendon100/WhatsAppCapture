@@ -1,6 +1,7 @@
 package com.whatscapture
 
 import android.accessibilityservice.AccessibilityService
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.CoroutineScope
@@ -14,18 +15,28 @@ class WhatsAppAccessibilityService : AccessibilityService() {
     private var lastSentSignature: String = ""
     private var lastSentAt: Long = 0L
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        event ?: return
-        val pkg = event.packageName?.toString() ?: return
-        if (pkg != WHATSAPP_PACKAGE && pkg != WHATSAPP_BUSINESS_PACKAGE) return
+    override fun onServiceConnected() {
+        Log.i(TAG, "Accessibility service conectado")
+    }
 
-        when (event.eventType) {
-            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> handleTextChanged(event)
-            AccessibilityEvent.TYPE_VIEW_CLICKED -> handleViewClicked(event, pkg)
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        try {
+            event ?: return
+            val pkg = event.packageName?.toString() ?: return
+            if (pkg != WHATSAPP_PACKAGE && pkg != WHATSAPP_BUSINESS_PACKAGE) return
+
+            when (event.eventType) {
+                AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> handleTextChanged(event)
+                AccessibilityEvent.TYPE_VIEW_CLICKED -> handleViewClicked(event, pkg)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error procesando evento de accesibilidad", e)
         }
     }
 
-    override fun onInterrupt() {}
+    override fun onInterrupt() {
+        Log.w(TAG, "Accessibility service interrumpido por el sistema")
+    }
 
     private fun handleTextChanged(event: AccessibilityEvent) {
         val value = event.text
@@ -90,10 +101,14 @@ class WhatsAppAccessibilityService : AccessibilityService() {
     private fun findComposerText(root: AccessibilityNodeInfo?): String {
         root ?: return ""
 
-        val byKnownId = COMPOSER_VIEW_IDS.asSequence()
-            .mapNotNull { id -> root.findAccessibilityNodeInfosByViewId(id).firstOrNull()?.text?.toString() }
-            .map { it.trim() }
-            .firstOrNull { it.isNotEmpty() }
+        val byKnownId = try {
+            COMPOSER_VIEW_IDS.asSequence()
+                .mapNotNull { id -> root.findAccessibilityNodeInfosByViewId(id).firstOrNull()?.text?.toString() }
+                .map { it.trim() }
+                .firstOrNull { it.isNotEmpty() }
+        } catch (_: Exception) {
+            null
+        }
         if (!byKnownId.isNullOrEmpty()) return byKnownId
 
         return findFirstEditableText(root).trim()
@@ -102,10 +117,14 @@ class WhatsAppAccessibilityService : AccessibilityService() {
     private fun findChatName(root: AccessibilityNodeInfo?): String {
         root ?: return ""
 
-        val byKnownId = CHAT_TITLE_VIEW_IDS.asSequence()
-            .mapNotNull { id -> root.findAccessibilityNodeInfosByViewId(id).firstOrNull()?.text?.toString() }
-            .map { it.trim() }
-            .firstOrNull { it.isNotEmpty() }
+        val byKnownId = try {
+            CHAT_TITLE_VIEW_IDS.asSequence()
+                .mapNotNull { id -> root.findAccessibilityNodeInfosByViewId(id).firstOrNull()?.text?.toString() }
+                .map { it.trim() }
+                .firstOrNull { it.isNotEmpty() }
+        } catch (_: Exception) {
+            null
+        }
         if (!byKnownId.isNullOrEmpty()) return byKnownId
 
         return ""
@@ -132,6 +151,7 @@ class WhatsAppAccessibilityService : AccessibilityService() {
     }
 
     companion object {
+        private const val TAG = "WAAccessibility"
         private const val WHATSAPP_PACKAGE = "com.whatsapp"
         private const val WHATSAPP_BUSINESS_PACKAGE = "com.whatsapp.w4b"
 
