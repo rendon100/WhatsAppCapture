@@ -92,8 +92,13 @@ class NotificationListener : NotificationListenerService() {
         )
 
         if (fallbackMessage != null) {
+            val fallbackAlreadyInBundle = messagingMessages.any {
+                normalizeForCompare(it.text) == normalizeForCompare(fallbackMessage.text)
+            }
             val shouldUseFallback =
-                messagingMessages.isEmpty() || (fallbackMessage.isFromMe && !hasOutgoingInBundle)
+                messagingMessages.isEmpty() ||
+                    (fallbackMessage.isFromMe && !hasOutgoingInBundle) ||
+                    !fallbackAlreadyInBundle
 
             if (shouldUseFallback) {
                 val messageSignature = buildMessageSignature(
@@ -195,6 +200,10 @@ class NotificationListener : NotificationListenerService() {
             timestamp = 0L,
             isFromMe = false
         )
+    }
+
+    private fun normalizeForCompare(value: String): String {
+        return value.lowercase().trim().replace("\\s+".toRegex(), " ")
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {}
