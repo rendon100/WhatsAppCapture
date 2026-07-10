@@ -37,41 +37,72 @@ class NotificationListener : NotificationListenerService() {
         }
 
         val extras: Bundle = sbn.notification.extras ?: return
+        val chatName = extras.getString(EXTRA_TITLE, "").ifBlank { "Desconocido" }
+        val selfDisplayName = extras
+            .getCharSequence(EXTRA_SELF_DISPLAY_NAME)
+            ?.toString()
+            ?.trim()
+            .orEmpty()
 
-        val title = extras.getString(EXTRA_TITLE, "")
+        val messagingMessages = extractMessagingMessages(extras, selfDisplayName)
+        if (messagingMessages.isNotEmpty()) {
+            messagingMessages
+                .sortedBy { it.timestamp }
+                .forEach { message ->
+                    val messageSignature = buildMessageSignature(
+                        sbn = sbn,
+                        sender = chatName,
+                        messageText = message.text,
+                        messagingTimestamp = message.timestamp,
+                        messagingSender = message.sender
+                    )
+                    if (!shouldSend(messageSignature)) return@forEach
+
+                    val senderLabel = when {
+                        message.isFromMe -> "Tu"
+                        message.sender.isNotEmpty() -> message.sender
+                        else -> chatName
+                    }
+                    val directionEmoji = if (message.isFromMe) "📤" else "📩"
+                    val finalMsg = """
+                        $directionEmoji *WhatsApp - $chatName*
+                        $senderLabel: ${message.text}
+                    """.trimIndent()
+
+                    CoroutineScope(Dispatchers.IO).launch {
+                        TelegramSender.sendMessage(
+                            token = Config.getToken(this@NotificationListener),
+                            chatId = Config.getChatId(this@NotificationListener),
+                            text = finalMsg
+                        )
+                    }
+                }
+            return
+        }
+
         val text = extras.getString(EXTRA_TEXT, "")
         val summary = extras.getString(EXTRA_SUMMARY_TEXT, "")
         val bigText = extras.getString(EXTRA_BIG_TEXT, "")
 
-        val latestMessagingText = try {
-            val bundledMessages = extras.getParcelableArray(Notification.EXTRA_MESSAGES)
-            Notification.MessagingStyle.Message
-                .getMessagesFromBundleArray(bundledMessages)
-                .lastOrNull()
-                ?.text
-                ?.toString()
-                ?.trim()
-                .orEmpty()
-        } catch (_: Exception) {
-            ""
-        }
-
         val messageText = when {
-            latestMessagingText.isNotEmpty() -> latestMessagingText
             bigText.isNotEmpty() -> bigText
             summary.isNotEmpty() -> summary
             text.isNotEmpty() -> text
             else -> return
         }
 
-        val sender = if (title.isNotEmpty()) title else "Desconocido"
-
         val finalMsg = """
-            📩 *WhatsApp - $sender*
+            📩 *WhatsApp - $chatName*
             $messageText
         """.trimIndent()
 
-        val messageSignature = "${sbn.packageName}|$sender|${messageText.trim()}"
+        val messageSignature = buildMessageSignature(
+            sbn = sbn,
+            sender = chatName,
+            messageText = messageText,
+            messagingTimestamp = sbn.postTime,
+            messagingSender = ""
+        )
         if (!shouldSend(messageSignature)) {
             return
         }
@@ -85,6 +116,41 @@ class NotificationListener : NotificationListenerService() {
         }
     }
 
+    private fun extractMessagingMessages(extras: Bundle, selfDisplayName: String): List<CapturedMessage> {
+        return try {
+            val bundledMessages = extras.getParcelableArray(Notification.EXTRA_MESSAGES)
+            Notification.MessagingStyle.Message
+                .getMessagesFromBundleArray(bundledMessages)
+                .mapNotNull { msg ->
+                    val text = msg.text?.toString()?.trim().orEmpty()
+                    if (text.isEmpty()) return@mapNotNull null
+
+                    val sender = msg.sender?.toString()?.trim().orEmpty()
+                    val isFromMe = isLikelySelfMessage(sender, selfDisplayName)
+                    CapturedMessage(
+                        sender = sender,
+                        text = text,
+                        timestamp = msg.timestamp,
+                        isFromMe = isFromMe
+                    )
+                }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun isLikelySelfMessage(sender: String, selfDisplayName: String): Boolean {
+        val normalizedSender = sender.lowercase().trim()
+        val normalizedSelf = selfDisplayName.lowercase().trim()
+        if (normalizedSender.isEmpty()) return false
+        if (normalizedSelf.isNotEmpty() && normalizedSender == normalizedSelf) return true
+
+        return normalizedSender == "you" ||
+            normalizedSender == "tu" ||
+            normalizedSender == "tú" ||
+            normalizedSender == "yo"
+    }
+
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {}
 
     companion object {
@@ -95,10 +161,42 @@ class NotificationListener : NotificationListenerService() {
         private const val EXTRA_TEXT = "android.text"
         private const val EXTRA_SUMMARY_TEXT = "android.summaryText"
         private const val EXTRA_BIG_TEXT = "android.bigText"
+        private const val EXTRA_SELF_DISPLAY_NAME = "android.selfDisplayName"
         private const val MAX_TRACKED_MESSAGES = 600
+
         @Volatile
         private var connected = false
         private val sentSignatures = LinkedHashSet<String>()
+
+        private data class CapturedMessage(
+            val sender: String,
+            val text: String,
+            val timestamp: Long,
+            val isFromMe: Boolean
+        )
+
+        private fun buildMessageSignature(
+            sbn: StatusBarNotification,
+            sender: String,
+            messageText: String,
+            messagingTimestamp: Long,
+            messagingSender: String
+        ): String {
+            val normalizedText = messageText.trim()
+            val normalizedSender = sender.trim()
+            val normalizedMessagingSender = messagingSender.trim()
+            val eventTimestamp = if (messagingTimestamp > 0L) messagingTimestamp else sbn.postTime
+            val notificationKey = sbn.key ?: ""
+
+            return listOf(
+                sbn.packageName,
+                notificationKey,
+                eventTimestamp.toString(),
+                normalizedSender,
+                normalizedMessagingSender,
+                normalizedText
+            ).joinToString("|")
+        }
 
         private fun shouldSend(signature: String): Boolean {
             val normalized = signature.trim()
