@@ -52,6 +52,11 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
+            if (!isAccessibilityServiceEnabled()) {
+                Toast.makeText(this, "Activa accesibilidad para capturar texto enviado", Toast.LENGTH_LONG).show()
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+
             try {
                 NotificationListener.forceRebind(this)
             } catch (_: Exception) {
@@ -143,5 +148,15 @@ class MainActivity : AppCompatActivity() {
             contentResolver, "enabled_notification_listeners"
         )
         return enabledListeners?.contains(packageName) == true
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+
+        val simpleName = "$packageName/${WhatsAppAccessibilityService::class.java.name}"
+        return enabledServices.contains(simpleName, ignoreCase = true)
     }
 }
