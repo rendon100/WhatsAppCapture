@@ -45,6 +45,7 @@ class NotificationListener : NotificationListenerService() {
             .orEmpty()
 
         val messagingMessages = extractMessagingMessages(extras, selfDisplayName)
+        val hasOutgoingInBundle = messagingMessages.any { it.isFromMe }
         if (messagingMessages.isNotEmpty()) {
             messagingMessages
                 .sortedBy { it.timestamp }
@@ -77,42 +78,52 @@ class NotificationListener : NotificationListenerService() {
                         )
                     }
                 }
-            return
         }
 
         val text = extras.getString(EXTRA_TEXT, "")
         val summary = extras.getString(EXTRA_SUMMARY_TEXT, "")
         val bigText = extras.getString(EXTRA_BIG_TEXT, "")
 
-        val messageText = when {
-            bigText.isNotEmpty() -> bigText
-            summary.isNotEmpty() -> summary
-            text.isNotEmpty() -> text
-            else -> return
-        }
-
-        val finalMsg = """
-            📩 *WhatsApp - $chatName*
-            $messageText
-        """.trimIndent()
-
-        val messageSignature = buildMessageSignature(
-            sbn = sbn,
-            sender = chatName,
-            messageText = messageText,
-            messagingTimestamp = sbn.postTime,
-            messagingSender = ""
+        val fallbackMessage = extractFallbackMessage(
+            bigText = bigText,
+            summary = summary,
+            text = text,
+            selfDisplayName = selfDisplayName
         )
-        if (!shouldSend(messageSignature)) {
-            return
-        }
 
-        CoroutineScope(Dispatchers.IO).launch {
-            TelegramSender.sendMessage(
-                token = Config.getToken(this@NotificationListener),
-                chatId = Config.getChatId(this@NotificationListener),
-                text = finalMsg
-            )
+        if (fallbackMessage != null) {
+            val shouldUseFallback =
+                messagingMessages.isEmpty() || (fallbackMessage.isFromMe && !hasOutgoingInBundle)
+
+            if (shouldUseFallback) {
+                val messageSignature = buildMessageSignature(
+                    sbn = sbn,
+                    sender = chatName,
+                    messageText = fallbackMessage.text,
+                    messagingTimestamp = sbn.postTime,
+                    messagingSender = fallbackMessage.sender
+                )
+                if (shouldSend(messageSignature)) {
+                    val senderLabel = when {
+                        fallbackMessage.isFromMe -> "Tu"
+                        fallbackMessage.sender.isNotEmpty() -> fallbackMessage.sender
+                        else -> chatName
+                    }
+                    val directionEmoji = if (fallbackMessage.isFromMe) "📤" else "📩"
+                    val finalMsg = """
+                        $directionEmoji *WhatsApp - $chatName*
+                        $senderLabel: ${fallbackMessage.text}
+                    """.trimIndent()
+
+                    CoroutineScope(Dispatchers.IO).launch {
+                        TelegramSender.sendMessage(
+                            token = Config.getToken(this@NotificationListener),
+                            chatId = Config.getChatId(this@NotificationListener),
+                            text = finalMsg
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -149,6 +160,41 @@ class NotificationListener : NotificationListenerService() {
             normalizedSender == "tu" ||
             normalizedSender == "tú" ||
             normalizedSender == "yo"
+    }
+
+    private fun extractFallbackMessage(
+        bigText: String,
+        summary: String,
+        text: String,
+        selfDisplayName: String
+    ): CapturedMessage? {
+        val candidate = when {
+            bigText.isNotBlank() -> bigText.trim()
+            summary.isNotBlank() -> summary.trim()
+            text.isNotBlank() -> text.trim()
+            else -> return null
+        }
+
+        val parts = candidate.split(':', limit = 2)
+        if (parts.size == 2) {
+            val possibleSender = parts[0].trim()
+            val possibleText = parts[1].trim()
+            if (possibleText.isNotEmpty()) {
+                return CapturedMessage(
+                    sender = possibleSender,
+                    text = possibleText,
+                    timestamp = 0L,
+                    isFromMe = isLikelySelfMessage(possibleSender, selfDisplayName)
+                )
+            }
+        }
+
+        return CapturedMessage(
+            sender = "",
+            text = candidate,
+            timestamp = 0L,
+            isFromMe = false
+        )
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {}
