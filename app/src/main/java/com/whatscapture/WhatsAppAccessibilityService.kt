@@ -28,6 +28,7 @@ class WhatsAppAccessibilityService : AccessibilityService() {
             when (event.eventType) {
                 AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> handleTextChanged(event)
                 AccessibilityEvent.TYPE_VIEW_CLICKED -> handleViewClicked(event, pkg)
+                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> handleWindowContentChanged(pkg)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error procesando evento de accesibilidad", e)
@@ -51,7 +52,7 @@ class WhatsAppAccessibilityService : AccessibilityService() {
 
     private fun handleViewClicked(event: AccessibilityEvent, pkg: String) {
         val source = event.source
-        if (!isSendAction(event, source)) return
+        if (!isSendAction(event, source) && recentDraft().isBlank()) return
 
         val chatName = findChatName(rootInActiveWindow).ifBlank { "Chat" }
         val outgoingText = findComposerText(rootInActiveWindow)
@@ -59,6 +60,25 @@ class WhatsAppAccessibilityService : AccessibilityService() {
             .trim()
         if (outgoingText.isBlank()) return
 
+        emitOutgoingText(pkg = pkg, chatName = chatName, outgoingText = outgoingText)
+    }
+
+    private fun handleWindowContentChanged(pkg: String) {
+        val composerText = findComposerText(rootInActiveWindow).trim()
+        if (composerText.isNotEmpty()) {
+            return
+        }
+
+        val draft = recentDraft()
+        if (draft.isBlank()) {
+            return
+        }
+
+        val chatName = findChatName(rootInActiveWindow).ifBlank { "Chat" }
+        emitOutgoingText(pkg = pkg, chatName = chatName, outgoingText = draft)
+    }
+
+    private fun emitOutgoingText(pkg: String, chatName: String, outgoingText: String) {
         val now = System.currentTimeMillis()
         val signature = "${pkg}|${chatName}|${outgoingText.lowercase()}"
         if (signature == lastSentSignature && now - lastSentAt < 4000L) {
@@ -87,6 +107,8 @@ class WhatsAppAccessibilityService : AccessibilityService() {
             append(event.contentDescription?.toString().orEmpty())
             append(" ")
             append(source?.contentDescription?.toString().orEmpty())
+            append(" ")
+            append(source?.text?.toString().orEmpty())
         }.lowercase()
 
         val fromViewId = source?.viewIdResourceName?.lowercase().orEmpty()
@@ -95,7 +117,9 @@ class WhatsAppAccessibilityService : AccessibilityService() {
         if (fromViewId.contains("send")) return true
 
         val className = source?.className?.toString()?.lowercase().orEmpty()
-        return className.contains("imagebutton") && fromDescription.isNotBlank()
+        if (className.contains("imagebutton") && fromDescription.isNotBlank()) return true
+
+        return className.contains("button") && recentDraft().isNotBlank()
     }
 
     private fun findComposerText(root: AccessibilityNodeInfo?): String {

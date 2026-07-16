@@ -10,11 +10,20 @@ import android.os.Environment
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.io.File
 
 class MediaMonitorService : Service() {
 
     private val watchers = mutableMapOf<String, MediaWatcher>()
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile
+    private var isStartingWatchers = false
 
     override fun onCreate() {
         super.onCreate()
@@ -28,16 +37,27 @@ class MediaMonitorService : Service() {
         getSharedPreferences("config", MODE_PRIVATE)
             .edit().putBoolean("running", true).apply()
 
-        if (watchers.isEmpty()) {
-            startWatching()
+        if (!hasWatchers() && !isStartingWatchers) {
+            isStartingWatchers = true
+            serviceScope.launch {
+                try {
+                    startWatching()
+                } finally {
+                    isStartingWatchers = false
+                }
+            }
         }
 
         return START_STICKY
     }
 
     override fun onDestroy() {
-        watchers.values.forEach { it.stopWatching() }
-        watchers.clear()
+        serviceScope.cancel()
+
+        val snapshot = synchronized(watchers) {
+            watchers.values.toList().also { watchers.clear() }
+        }
+        snapshot.forEach { it.stopWatching() }
 
         getSharedPreferences("config", MODE_PRIVATE)
             .edit().putBoolean("running", false).apply()
@@ -137,13 +157,24 @@ class MediaMonitorService : Service() {
     }
 
     private fun addWatcher(dirPath: String, token: String, chatId: String) {
-        if (watchers.containsKey(dirPath)) return
+        synchronized(watchers) {
+            if (watchers.containsKey(dirPath)) return
+        }
+
         try {
             val watcher = MediaWatcher(dirPath, token, chatId)
             watcher.startWatching()
-            watchers[dirPath] = watcher
+            synchronized(watchers) {
+                watchers[dirPath] = watcher
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error en $dirPath", e)
+        }
+    }
+
+    private fun hasWatchers(): Boolean {
+        synchronized(watchers) {
+            return watchers.isNotEmpty()
         }
     }
 
