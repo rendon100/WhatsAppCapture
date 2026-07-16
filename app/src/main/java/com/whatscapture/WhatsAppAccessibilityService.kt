@@ -36,6 +36,7 @@ class WhatsAppAccessibilityService : AccessibilityService() {
                 AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> handleTextChanged(event)
                 AccessibilityEvent.TYPE_VIEW_CLICKED -> handleViewClicked(event, pkg)
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> handleWindowContentChanged(pkg)
+                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> handleWindowStateChanged(pkg)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error procesando evento de accesibilidad", e)
@@ -69,7 +70,7 @@ class WhatsAppAccessibilityService : AccessibilityService() {
 
     private fun handleViewClicked(event: AccessibilityEvent, pkg: String) {
         val source = event.source
-        if (!isSendAction(event, source) && recentDraft().isBlank()) return
+        if (!isSendAction(event, source)) return
 
         val chatName = findChatName(rootInActiveWindow).ifBlank { "Chat" }
         scheduleOutgoingMediaScan(pkg)
@@ -104,6 +105,12 @@ class WhatsAppAccessibilityService : AccessibilityService() {
 
         val chatName = findChatName(rootInActiveWindow).ifBlank { "Chat" }
         emitOutgoingText(pkg = pkg, chatName = chatName, outgoingText = draft)
+    }
+
+    private fun handleWindowStateChanged(pkg: String) {
+        if (looksLikeMediaPreview(rootInActiveWindow)) {
+            scheduleOutgoingMediaScan(pkg)
+        }
     }
 
     private fun emitOutgoingText(pkg: String, chatName: String, outgoingText: String) {
@@ -164,11 +171,12 @@ class WhatsAppAccessibilityService : AccessibilityService() {
             .flatMap { root ->
                 runCatching {
                     root.walkTopDown()
-                        .maxDepth(2)
+                        .maxDepth(4)
                         .filter { file ->
                             file.isFile &&
                                 !file.name.startsWith(".") &&
                                 !file.name.startsWith("nomedia") &&
+                                hasSupportedMediaExtension(file.name) &&
                                 now - file.lastModified() <= RECENT_MEDIA_WINDOW_MS
                         }
                         .toList()
@@ -184,32 +192,60 @@ class WhatsAppAccessibilityService : AccessibilityService() {
         val externalRoot = Environment.getExternalStorageDirectory()
 
         if (pkg == WHATSAPP_PACKAGE) {
+            roots += File(externalRoot, "WhatsApp/Media")
             roots += File(externalRoot, "WhatsApp/Media/WhatsApp Images/Sent")
+            roots += File(externalRoot, "WhatsApp/Media/WhatsApp Images")
             roots += File(externalRoot, "WhatsApp/Media/WhatsApp Video/Sent")
+            roots += File(externalRoot, "WhatsApp/Media/WhatsApp Video")
+            roots += File(externalRoot, "WhatsApp/Media/WhatsApp Audio")
             roots += File(externalRoot, "WhatsApp/Media/WhatsApp Documents/Sent")
+            roots += File(externalRoot, "WhatsApp/Media/WhatsApp Documents")
             roots += File(externalRoot, "WhatsApp/Media/WhatsApp Animated Gifs/Sent")
+            roots += File(externalRoot, "WhatsApp/Media/WhatsApp Animated Gifs")
+            roots += File(externalRoot, "WhatsApp/Media/WhatsApp Voice Notes")
         } else {
+            roots += File(externalRoot, "WhatsApp Business/Media")
             roots += File(externalRoot, "WhatsApp Business/Media/WhatsApp Images/Sent")
+            roots += File(externalRoot, "WhatsApp Business/Media/WhatsApp Images")
             roots += File(externalRoot, "WhatsApp Business/Media/WhatsApp Video/Sent")
+            roots += File(externalRoot, "WhatsApp Business/Media/WhatsApp Video")
+            roots += File(externalRoot, "WhatsApp Business/Media/WhatsApp Audio")
             roots += File(externalRoot, "WhatsApp Business/Media/WhatsApp Documents/Sent")
+            roots += File(externalRoot, "WhatsApp Business/Media/WhatsApp Documents")
             roots += File(externalRoot, "WhatsApp Business/Media/WhatsApp Animated Gifs/Sent")
+            roots += File(externalRoot, "WhatsApp Business/Media/WhatsApp Animated Gifs")
+            roots += File(externalRoot, "WhatsApp Business/Media/WhatsApp Voice Notes")
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (pkg == WHATSAPP_PACKAGE) {
+                roots += File(externalRoot, "Android/media/com.whatsapp/WhatsApp/Media")
                 roots += File(externalRoot, "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images/Sent")
+                roots += File(externalRoot, "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images")
                 roots += File(externalRoot, "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video/Sent")
+                roots += File(externalRoot, "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video")
+                roots += File(externalRoot, "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Audio")
                 roots += File(externalRoot, "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents/Sent")
+                roots += File(externalRoot, "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents")
                 roots += File(externalRoot, "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Animated Gifs/Sent")
+                roots += File(externalRoot, "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Animated Gifs")
+                roots += File(externalRoot, "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Voice Notes")
             } else {
+                roots += File(externalRoot, "Android/media/com.whatsapp.w4b/WhatsApp Business/Media")
                 roots += File(externalRoot, "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Images/Sent")
+                roots += File(externalRoot, "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Images")
                 roots += File(externalRoot, "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Video/Sent")
+                roots += File(externalRoot, "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Video")
+                roots += File(externalRoot, "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Audio")
                 roots += File(externalRoot, "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Documents/Sent")
+                roots += File(externalRoot, "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Documents")
                 roots += File(externalRoot, "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Animated Gifs/Sent")
+                roots += File(externalRoot, "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Animated Gifs")
+                roots += File(externalRoot, "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Voice Notes")
             }
         }
 
-        return roots
+        return roots.distinctBy { it.absolutePath }
     }
 
     private fun isSendAction(event: AccessibilityEvent, source: AccessibilityNodeInfo?): Boolean {
@@ -229,7 +265,52 @@ class WhatsAppAccessibilityService : AccessibilityService() {
         val className = source?.className?.toString()?.lowercase().orEmpty()
         if (className.contains("imagebutton") && fromDescription.isNotBlank()) return true
 
+        if (className.contains("imagebutton") && looksLikeMediaPreview(rootInActiveWindow)) return true
+        if (className.contains("button") && looksLikeMediaPreview(rootInActiveWindow)) return true
+
         return className.contains("button") && recentDraft().isNotBlank()
+    }
+
+    private fun looksLikeMediaPreview(root: AccessibilityNodeInfo?): Boolean {
+        root ?: return false
+
+        val textDump = collectVisibleText(root).lowercase()
+        return MEDIA_PREVIEW_HINTS.any { textDump.contains(it) }
+    }
+
+    private fun collectVisibleText(node: AccessibilityNodeInfo): String {
+        val parts = mutableListOf<String>()
+        node.text?.toString()?.takeIf { it.isNotBlank() }?.let(parts::add)
+        node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let(parts::add)
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val childText = collectVisibleText(child)
+            if (childText.isNotBlank()) {
+                parts.add(childText)
+            }
+        }
+
+        return parts.joinToString(" ")
+    }
+
+    private fun hasSupportedMediaExtension(fileName: String): Boolean {
+        val normalized = fileName.lowercase()
+        return normalized.endsWith(".jpg") ||
+            normalized.endsWith(".jpeg") ||
+            normalized.endsWith(".png") ||
+            normalized.endsWith(".gif") ||
+            normalized.endsWith(".webp") ||
+            normalized.endsWith(".mp4") ||
+            normalized.endsWith(".3gp") ||
+            normalized.endsWith(".mkv") ||
+            normalized.endsWith(".mp3") ||
+            normalized.endsWith(".ogg") ||
+            normalized.endsWith(".m4a") ||
+            normalized.endsWith(".opus") ||
+            normalized.endsWith(".pdf") ||
+            normalized.endsWith(".doc") ||
+            normalized.endsWith(".docx")
     }
 
     private fun findComposerText(root: AccessibilityNodeInfo?): String {
@@ -302,6 +383,12 @@ class WhatsAppAccessibilityService : AccessibilityService() {
         private const val MAX_MEDIA_SCAN_RESULTS = 5
 
         private val SEND_HINTS = listOf("send", "enviar")
+        private val MEDIA_PREVIEW_HINTS = listOf(
+            "añade un comentario",
+            "anade un comentario",
+            "add a caption",
+            "type a caption"
+        )
 
         private val COMPOSER_VIEW_IDS = listOf(
             "com.whatsapp:id/entry",
