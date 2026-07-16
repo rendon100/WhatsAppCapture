@@ -4,6 +4,7 @@ import android.app.Notification
 import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
@@ -50,16 +51,31 @@ class NotificationListener : NotificationListenerService() {
             messagingMessages
                 .sortedBy { it.timestamp }
                 .forEach { message ->
-                    if (message.isFromMe) return@forEach
+                    val mediaKey = if (message.dataUri.isNotEmpty()) {
+                        "${message.dataMimeType}|${message.dataUri}"
+                    } else {
+                        ""
+                    }
 
                     val messageSignature = buildMessageSignature(
                         sbn = sbn,
                         sender = chatName,
                         messageText = message.text,
                         messagingTimestamp = message.timestamp,
-                        messagingSender = message.sender
+                        messagingSender = message.sender,
+                        payloadKey = mediaKey
                     )
                     if (!shouldSend(messageSignature)) return@forEach
+
+                    if (message.dataUri.isNotEmpty()) {
+                        sendMediaFromMessage(
+                            mediaUri = message.dataUri,
+                            mimeType = message.dataMimeType,
+                            fallbackName = "whatsapp_media_${message.timestamp}"
+                        )
+                    }
+
+                    if (message.isFromMe) return@forEach
 
                     val senderLabel = when {
                         message.isFromMe -> "Tu"
@@ -145,7 +161,9 @@ class NotificationListener : NotificationListenerService() {
                 .getMessagesFromBundleArray(bundledMessages)
                 .mapNotNull { msg ->
                     val text = msg.text?.toString()?.trim().orEmpty()
-                    if (text.isEmpty()) return@mapNotNull null
+                    val dataUri = msg.dataUri?.toString().orEmpty()
+                    val dataMimeType = msg.dataMimeType?.trim().orEmpty()
+                    if (text.isEmpty() && dataUri.isEmpty()) return@mapNotNull null
 
                     val sender = msg.sender?.toString()?.trim().orEmpty()
                     val isFromMe = isLikelySelfMessage(sender, selfDisplayName)
@@ -153,7 +171,9 @@ class NotificationListener : NotificationListenerService() {
                         sender = sender,
                         text = text,
                         timestamp = msg.timestamp,
-                        isFromMe = isFromMe
+                        isFromMe = isFromMe,
+                        dataUri = dataUri,
+                        dataMimeType = dataMimeType
                     )
                 }
         } catch (_: Exception) {
@@ -212,6 +232,60 @@ class NotificationListener : NotificationListenerService() {
         return value.lowercase().trim().replace("\\s+".toRegex(), " ")
     }
 
+    private fun sendMediaFromMessage(mediaUri: String, mimeType: String, fallbackName: String) {
+        try {
+            val uri = Uri.parse(mediaUri)
+            val input = contentResolver.openInputStream(uri) ?: return
+            val extension = extensionFromMimeType(mimeType)
+            val tempFile = java.io.File.createTempFile(fallbackName, extension, cacheDir)
+
+            input.use { stream ->
+                tempFile.outputStream().use { output ->
+                    stream.copyTo(output)
+                }
+            }
+
+            if (!tempFile.exists() || tempFile.length() <= 0L) {
+                tempFile.delete()
+                return
+            }
+
+            val sent = TelegramSender.sendFile(
+                token = Config.getToken(this),
+                chatId = Config.getChatId(this),
+                filePath = tempFile.absolutePath,
+                fileName = tempFile.name
+            )
+
+            if (!sent) {
+                Log.e(TAG, "No se pudo enviar multimedia desde dataUri: $mediaUri")
+            }
+
+            tempFile.delete()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error enviando multimedia desde dataUri", e)
+        }
+    }
+
+    private fun extensionFromMimeType(mimeType: String): String {
+        val normalized = mimeType.lowercase().trim()
+        return when {
+            normalized.contains("jpeg") -> ".jpg"
+            normalized.contains("png") -> ".png"
+            normalized.contains("gif") -> ".gif"
+            normalized.contains("webp") -> ".webp"
+            normalized.contains("mp4") -> ".mp4"
+            normalized.contains("3gpp") -> ".3gp"
+            normalized.contains("matroska") -> ".mkv"
+            normalized.contains("mpeg") && normalized.contains("audio") -> ".mp3"
+            normalized.contains("ogg") -> ".ogg"
+            normalized.contains("pdf") -> ".pdf"
+            normalized.contains("msword") -> ".doc"
+            normalized.contains("officedocument") -> ".docx"
+            else -> ".bin"
+        }
+    }
+
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {}
 
     companion object {
@@ -233,7 +307,9 @@ class NotificationListener : NotificationListenerService() {
             val sender: String,
             val text: String,
             val timestamp: Long,
-            val isFromMe: Boolean
+            val isFromMe: Boolean,
+            val dataUri: String,
+            val dataMimeType: String
         )
 
         private fun buildMessageSignature(
@@ -241,11 +317,13 @@ class NotificationListener : NotificationListenerService() {
             sender: String,
             messageText: String,
             messagingTimestamp: Long,
-            messagingSender: String
+            messagingSender: String,
+            payloadKey: String = ""
         ): String {
             val normalizedText = messageText.trim()
             val normalizedSender = sender.trim()
             val normalizedMessagingSender = messagingSender.trim()
+            val normalizedPayloadKey = payloadKey.trim()
             val eventTimestamp = if (messagingTimestamp > 0L) messagingTimestamp else sbn.postTime
             val notificationKey = sbn.key ?: ""
 
@@ -255,7 +333,8 @@ class NotificationListener : NotificationListenerService() {
                 eventTimestamp.toString(),
                 normalizedSender,
                 normalizedMessagingSender,
-                normalizedText
+                normalizedText,
+                normalizedPayloadKey
             ).joinToString("|")
         }
 
