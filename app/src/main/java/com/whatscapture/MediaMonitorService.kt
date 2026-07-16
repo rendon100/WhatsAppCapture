@@ -86,7 +86,7 @@ class MediaMonitorService : Service() {
 
     private fun buildNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("WhatsCapture activo")
+            .setContentTitle("Brujula activo")
             .setContentText("Monitoreando notificaciones y archivos")
             .setSmallIcon(R.drawable.ic_notification)
             .setPriority(NotificationCompat.PRIORITY_LOW)
