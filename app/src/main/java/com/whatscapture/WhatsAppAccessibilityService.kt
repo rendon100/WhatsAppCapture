@@ -221,7 +221,16 @@ class WhatsAppAccessibilityService : AccessibilityService() {
             "mensaje",
             "message",
             "write a message",
-            "escribe un mensaje"
+            "escribe un mensaje",
+            "añade un comentario",
+            "añade un comentario...",
+            "añade un comentario…",
+            "anade un comentario",
+            "anade un comentario...",
+            "anade un comentario…",
+            "add a caption",
+            "add caption",
+            "type a caption"
         )
 
         private val CHAT_TITLE_VIEW_IDS = listOf(
