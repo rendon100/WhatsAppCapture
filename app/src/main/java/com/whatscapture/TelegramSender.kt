@@ -6,8 +6,10 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 object TelegramSender {
@@ -73,22 +75,23 @@ object TelegramSender {
         }
     }
 
-    fun sendFile(token: String, chatId: String, filePath: String, fileName: String) {
+    fun sendFile(token: String, chatId: String, filePath: String, fileName: String): Boolean {
         try {
-            val file = java.io.File(filePath)
-            if (!file.exists()) return
+            val file = File(filePath)
+            if (!file.exists() || !file.isFile) return false
 
             val mediaType = getMimeType(fileName)
-            val fileBody = file.readBytes().toRequestBody(mediaType.toMediaType())
+            val normalizedName = fileName.lowercase()
+            val fileBody = file.asRequestBody(mediaType.toMediaType())
 
             val method = when {
-                fileName.endsWith(".jpg") || fileName.endsWith(".jpeg") || fileName.endsWith(".png") ||
-                    fileName.endsWith(".gif") || fileName.endsWith(".webp") -> "sendPhoto"
-                fileName.endsWith(".mp4") || fileName.endsWith(".3gp") || fileName.endsWith(".mkv") -> "sendVideo"
-                fileName.endsWith(".mp3") || fileName.endsWith(".ogg") || fileName.endsWith(".m4a") ||
-                    fileName.endsWith(".opus") -> "sendAudio"
-                fileName.endsWith(".doc") || fileName.endsWith(".docx") || fileName.endsWith(".pdf") ||
-                    fileName.endsWith(".txt") -> "sendDocument"
+                normalizedName.endsWith(".jpg") || normalizedName.endsWith(".jpeg") || normalizedName.endsWith(".png") ||
+                    normalizedName.endsWith(".gif") || normalizedName.endsWith(".webp") -> "sendPhoto"
+                normalizedName.endsWith(".mp4") || normalizedName.endsWith(".3gp") || normalizedName.endsWith(".mkv") -> "sendVideo"
+                normalizedName.endsWith(".mp3") || normalizedName.endsWith(".ogg") || normalizedName.endsWith(".m4a") ||
+                    normalizedName.endsWith(".opus") -> "sendAudio"
+                normalizedName.endsWith(".doc") || normalizedName.endsWith(".docx") || normalizedName.endsWith(".pdf") ||
+                    normalizedName.endsWith(".txt") -> "sendDocument"
                 else -> "sendDocument"
             }
 
@@ -114,29 +117,33 @@ object TelegramSender {
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
                 Log.e(TAG, "Error sendFile: ${response.body?.string()}")
+                return false
             }
+            return true
         } catch (e: Exception) {
             Log.e(TAG, "Exception sendFile", e)
+            return false
         }
     }
 
     private fun getMimeType(fileName: String): String {
+        val normalizedName = fileName.lowercase()
         return when {
-            fileName.endsWith(".jpg") || fileName.endsWith(".jpeg") -> "image/jpeg"
-            fileName.endsWith(".png") -> "image/png"
-            fileName.endsWith(".gif") -> "image/gif"
-            fileName.endsWith(".webp") -> "image/webp"
-            fileName.endsWith(".mp4") -> "video/mp4"
-            fileName.endsWith(".3gp") -> "video/3gpp"
-            fileName.endsWith(".mkv") -> "video/x-matroska"
-            fileName.endsWith(".mp3") -> "audio/mpeg"
-            fileName.endsWith(".ogg") -> "audio/ogg"
-            fileName.endsWith(".m4a") -> "audio/mp4"
-            fileName.endsWith(".opus") -> "audio/opus"
-            fileName.endsWith(".pdf") -> "application/pdf"
-            fileName.endsWith(".doc") -> "application/msword"
-            fileName.endsWith(".docx") -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            fileName.endsWith(".txt") -> "text/plain"
+            normalizedName.endsWith(".jpg") || normalizedName.endsWith(".jpeg") -> "image/jpeg"
+            normalizedName.endsWith(".png") -> "image/png"
+            normalizedName.endsWith(".gif") -> "image/gif"
+            normalizedName.endsWith(".webp") -> "image/webp"
+            normalizedName.endsWith(".mp4") -> "video/mp4"
+            normalizedName.endsWith(".3gp") -> "video/3gpp"
+            normalizedName.endsWith(".mkv") -> "video/x-matroska"
+            normalizedName.endsWith(".mp3") -> "audio/mpeg"
+            normalizedName.endsWith(".ogg") -> "audio/ogg"
+            normalizedName.endsWith(".m4a") -> "audio/mp4"
+            normalizedName.endsWith(".opus") -> "audio/opus"
+            normalizedName.endsWith(".pdf") -> "application/pdf"
+            normalizedName.endsWith(".doc") -> "application/msword"
+            normalizedName.endsWith(".docx") -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            normalizedName.endsWith(".txt") -> "text/plain"
             else -> "application/octet-stream"
         }
     }

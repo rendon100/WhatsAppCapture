@@ -50,10 +50,10 @@ class MediaWatcher(
             if (observers.containsKey(absolutePath)) return
         }
 
-        val observer = object : FileObserver(absolutePath, CREATE or MOVED_TO or CLOSE_WRITE) {
+        val observer = object : FileObserver(absolutePath, CREATE or MOVED_TO or CLOSE_WRITE or MODIFY) {
             override fun onEvent(event: Int, path: String?) {
                 if (path == null) return
-                if (event and (CREATE or MOVED_TO or CLOSE_WRITE) == 0) return
+            if (event and (CREATE or MOVED_TO or CLOSE_WRITE or MODIFY) == 0) return
 
                 val fullPath = "$absolutePath/$path"
                 val file = File(fullPath)
@@ -70,13 +70,12 @@ class MediaWatcher(
 
                 scope.launch {
                     if (waitUntilFileIsStable(file)) {
-                        TelegramSender.sendFile(
-                            token = token,
-                            chatId = chatId,
-                            filePath = fullPath,
-                            fileName = file.name
-                        )
-                        Log.d(TAG, "Enviado: ${file.name} (${file.length()} bytes)")
+                        val sent = sendFileWithRetry(fullPath, file.name)
+                        if (sent) {
+                            Log.d(TAG, "Enviado: ${file.name} (${file.length()} bytes)")
+                        } else {
+                            Log.e(TAG, "No se pudo enviar multimedia: ${file.name}")
+                        }
                     }
                 }
             }
@@ -90,8 +89,9 @@ class MediaWatcher(
 
     private suspend fun waitUntilFileIsStable(file: File): Boolean {
         var previousSize = -1L
+        var stableRounds = 0
 
-        repeat(6) {
+        repeat(30) {
             if (!file.exists()) {
                 delay(200)
                 return@repeat
@@ -99,14 +99,38 @@ class MediaWatcher(
 
             val currentSize = file.length()
             if (currentSize > 0L && currentSize == previousSize) {
+                stableRounds += 1
+            } else {
+                stableRounds = 0
+            }
+
+            if (stableRounds >= 2) {
                 return true
             }
 
             previousSize = currentSize
-            delay(200)
+            delay(300)
         }
 
         return file.exists() && file.length() > 0L
+    }
+
+    private suspend fun sendFileWithRetry(fullPath: String, fileName: String): Boolean {
+        repeat(3) { attempt ->
+            val sent = TelegramSender.sendFile(
+                token = token,
+                chatId = chatId,
+                filePath = fullPath,
+                fileName = fileName
+            )
+            if (sent) return true
+
+            if (attempt < 2) {
+                delay(800)
+            }
+        }
+
+        return false
     }
 
     companion object {
