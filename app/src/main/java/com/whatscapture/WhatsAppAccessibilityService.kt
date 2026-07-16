@@ -21,6 +21,7 @@ class WhatsAppAccessibilityService : AccessibilityService() {
     private var lastSentAt: Long = 0L
     private var lastComposerText: String = ""
     private var pendingMediaScan: Job? = null
+    private var lastMediaScanAt: Long = 0L
 
     override fun onServiceConnected() {
         Log.i(TAG, "Accessibility service conectado")
@@ -38,6 +39,8 @@ class WhatsAppAccessibilityService : AccessibilityService() {
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> handleWindowContentChanged(pkg)
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> handleWindowStateChanged(pkg)
             }
+
+            maybeScheduleMediaScanFromPreview(pkg)
         } catch (e: Exception) {
             Log.e(TAG, "Error procesando evento de accesibilidad", e)
         }
@@ -70,7 +73,10 @@ class WhatsAppAccessibilityService : AccessibilityService() {
 
     private fun handleViewClicked(event: AccessibilityEvent, pkg: String) {
         val source = event.source
-        if (!isSendAction(event, source)) return
+        if (!isSendAction(event, source)) {
+            maybeScheduleMediaScanFromPreview(pkg)
+            return
+        }
 
         val chatName = findChatName(rootInActiveWindow).ifBlank { "Chat" }
         scheduleOutgoingMediaScan(pkg)
@@ -83,6 +89,10 @@ class WhatsAppAccessibilityService : AccessibilityService() {
     }
 
     private fun handleWindowContentChanged(pkg: String) {
+        if (looksLikeMediaPreview(rootInActiveWindow)) {
+            scheduleOutgoingMediaScan(pkg)
+        }
+
         val composerText = sanitizeComposerText(findComposerText(rootInActiveWindow))
         if (composerText.isNotEmpty()) {
             lastComposerText = composerText
@@ -111,6 +121,15 @@ class WhatsAppAccessibilityService : AccessibilityService() {
         if (looksLikeMediaPreview(rootInActiveWindow)) {
             scheduleOutgoingMediaScan(pkg)
         }
+    }
+
+    private fun maybeScheduleMediaScanFromPreview(pkg: String) {
+        val now = System.currentTimeMillis()
+        if (!looksLikeMediaPreview(rootInActiveWindow)) return
+        if (now - lastMediaScanAt < MEDIA_SCAN_THROTTLE_MS) return
+
+        lastMediaScanAt = now
+        scheduleOutgoingMediaScan(pkg)
     }
 
     private fun emitOutgoingText(pkg: String, chatName: String, outgoingText: String) {
@@ -381,6 +400,7 @@ class WhatsAppAccessibilityService : AccessibilityService() {
         private const val WHATSAPP_BUSINESS_PACKAGE = "com.whatsapp.w4b"
         private const val RECENT_MEDIA_WINDOW_MS = 20_000L
         private const val MAX_MEDIA_SCAN_RESULTS = 5
+        private const val MEDIA_SCAN_THROTTLE_MS = 1_500L
 
         private val SEND_HINTS = listOf("send", "enviar")
         private val MEDIA_PREVIEW_HINTS = listOf(
