@@ -21,6 +21,7 @@ object TelegramSender {
         .build()
 
     private const val API_BASE = "https://api.telegram.org/bot"
+    private val sentFileSignatures = LinkedHashSet<String>()
 
     fun sendMessage(token: String, chatId: String, text: String) {
         try {
@@ -79,6 +80,12 @@ object TelegramSender {
         try {
             val file = File(filePath)
             if (!file.exists() || !file.isFile) return false
+
+            val fileSignature = buildFileSignature(file)
+            if (!rememberFileSignature(fileSignature)) {
+                Log.d(TAG, "Archivo ya enviado, se omite duplicado: ${file.absolutePath}")
+                return true
+            }
 
             val mediaType = getMimeType(fileName)
             val normalizedName = fileName.lowercase()
@@ -148,6 +155,28 @@ object TelegramSender {
         }
     }
 
+    private fun buildFileSignature(file: File): String {
+        return "${file.absolutePath}|${file.length()}|${file.lastModified()}"
+    }
+
+    private fun rememberFileSignature(signature: String): Boolean {
+        synchronized(sentFileSignatures) {
+            if (sentFileSignatures.contains(signature)) {
+                return false
+            }
+
+            sentFileSignatures.add(signature)
+            while (sentFileSignatures.size > MAX_FILE_SIGNATURES) {
+                val iterator = sentFileSignatures.iterator()
+                if (!iterator.hasNext()) break
+                iterator.next()
+                iterator.remove()
+            }
+        }
+
+        return true
+    }
+
     private fun escapeJson(text: String): String {
         return text.replace("\\", "\\\\")
             .replace("\"", "\\\"")
@@ -157,4 +186,5 @@ object TelegramSender {
     }
 
     private const val TAG = "TelegramSender"
+    private const val MAX_FILE_SIGNATURES = 2000
 }

