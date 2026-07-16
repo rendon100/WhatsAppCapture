@@ -41,10 +41,11 @@ class WhatsAppAccessibilityService : AccessibilityService() {
     }
 
     private fun handleTextChanged(event: AccessibilityEvent) {
-        val value = event.text
+        val rawValue = event.text
             ?.joinToString(" ")
             ?.trim()
             .orEmpty()
+        val value = sanitizeComposerText(rawValue)
         val previous = lastComposerText
         lastComposerText = value
 
@@ -74,7 +75,7 @@ class WhatsAppAccessibilityService : AccessibilityService() {
     }
 
     private fun handleWindowContentChanged(pkg: String) {
-        val composerText = findComposerText(rootInActiveWindow).trim()
+        val composerText = sanitizeComposerText(findComposerText(rootInActiveWindow))
         if (composerText.isNotEmpty()) {
             lastComposerText = composerText
             lastDraftText = composerText
@@ -148,14 +149,14 @@ class WhatsAppAccessibilityService : AccessibilityService() {
         val byKnownId = try {
             COMPOSER_VIEW_IDS.asSequence()
                 .mapNotNull { id -> root.findAccessibilityNodeInfosByViewId(id).firstOrNull()?.text?.toString() }
-                .map { it.trim() }
+                .map { sanitizeComposerText(it) }
                 .firstOrNull { it.isNotEmpty() }
         } catch (_: Exception) {
             null
         }
         if (!byKnownId.isNullOrEmpty()) return byKnownId
 
-        return findFirstEditableText(root).trim()
+        return sanitizeComposerText(findFirstEditableText(root))
     }
 
     private fun findChatName(root: AccessibilityNodeInfo?): String {
@@ -176,7 +177,7 @@ class WhatsAppAccessibilityService : AccessibilityService() {
 
     private fun findFirstEditableText(node: AccessibilityNodeInfo): String {
         val text = node.text?.toString()?.trim().orEmpty()
-        if (node.isEditable && text.isNotEmpty()) {
+        if (node.isEditable && sanitizeComposerText(text).isNotEmpty()) {
             return text
         }
 
@@ -194,6 +195,16 @@ class WhatsAppAccessibilityService : AccessibilityService() {
         return if (elapsed <= 7000L) lastDraftText else ""
     }
 
+    private fun sanitizeComposerText(value: String): String {
+        val trimmed = value.trim()
+        if (trimmed.isEmpty()) return ""
+
+        val normalized = trimmed.lowercase()
+        if (normalized in COMPOSER_HINTS) return ""
+
+        return trimmed
+    }
+
     companion object {
         private const val TAG = "WAAccessibility"
         private const val WHATSAPP_PACKAGE = "com.whatsapp"
@@ -204,6 +215,13 @@ class WhatsAppAccessibilityService : AccessibilityService() {
         private val COMPOSER_VIEW_IDS = listOf(
             "com.whatsapp:id/entry",
             "com.whatsapp.w4b:id/entry"
+        )
+
+        private val COMPOSER_HINTS = setOf(
+            "mensaje",
+            "message",
+            "write a message",
+            "escribe un mensaje"
         )
 
         private val CHAT_TITLE_VIEW_IDS = listOf(
