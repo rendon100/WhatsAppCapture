@@ -50,6 +50,8 @@ class NotificationListener : NotificationListenerService() {
             messagingMessages
                 .sortedBy { it.timestamp }
                 .forEach { message ->
+                    if (message.isFromMe) return@forEach
+
                     val messageSignature = buildMessageSignature(
                         sbn = sbn,
                         sender = chatName,
@@ -92,6 +94,10 @@ class NotificationListener : NotificationListenerService() {
         )
 
         if (fallbackMessage != null) {
+            if (fallbackMessage.isFromMe) {
+                return
+            }
+
             val fallbackAlreadyInBundle = messagingMessages.any {
                 normalizeForCompare(it.text) == normalizeForCompare(fallbackMessage.text)
             }
