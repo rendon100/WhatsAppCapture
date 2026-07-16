@@ -14,6 +14,7 @@ class WhatsAppAccessibilityService : AccessibilityService() {
     private var lastDraftAt: Long = 0L
     private var lastSentSignature: String = ""
     private var lastSentAt: Long = 0L
+    private var lastComposerText: String = ""
 
     override fun onServiceConnected() {
         Log.i(TAG, "Accessibility service conectado")
@@ -44,7 +45,16 @@ class WhatsAppAccessibilityService : AccessibilityService() {
             ?.joinToString(" ")
             ?.trim()
             .orEmpty()
-        if (value.isEmpty()) return
+        val previous = lastComposerText
+        lastComposerText = value
+
+        if (value.isEmpty()) {
+            if (previous.isNotBlank()) {
+                lastDraftText = previous
+                lastDraftAt = System.currentTimeMillis()
+            }
+            return
+        }
 
         lastDraftText = value
         lastDraftAt = System.currentTimeMillis()
@@ -66,7 +76,17 @@ class WhatsAppAccessibilityService : AccessibilityService() {
     private fun handleWindowContentChanged(pkg: String) {
         val composerText = findComposerText(rootInActiveWindow).trim()
         if (composerText.isNotEmpty()) {
+            lastComposerText = composerText
+            lastDraftText = composerText
+            lastDraftAt = System.currentTimeMillis()
             return
+        }
+
+        val recentlyClearedDraft = if (lastComposerText.isNotBlank()) lastComposerText else ""
+        if (composerText.isEmpty() && recentlyClearedDraft.length >= 2) {
+            lastDraftText = recentlyClearedDraft
+            lastDraftAt = System.currentTimeMillis()
+            lastComposerText = ""
         }
 
         val draft = recentDraft()
